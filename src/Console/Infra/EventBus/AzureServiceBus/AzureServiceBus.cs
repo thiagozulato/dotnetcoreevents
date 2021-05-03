@@ -13,7 +13,7 @@ namespace IntegrationEvent
         public string Subscription { get; set; }
     }
 
-    public sealed class AzureServiceBus : IServiceBus, IDisposable
+    public sealed class AzureServiceBus : IServiceBus, IAsyncDisposable
     {
         readonly AzureServiceBusConfig _config;
         readonly IContainer _autofac;
@@ -124,11 +124,12 @@ namespace IntegrationEvent
             }
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
             _manager.ClearAllEvents();
-            _processor.StopProcessingAsync().ConfigureAwait(false);
-            _processor.CloseAsync().ConfigureAwait(false);
+            await _processor.StopProcessingAsync();
+            await _processor.CloseAsync();
+            await Client.DisposeAsync();
         }
     }
 }
