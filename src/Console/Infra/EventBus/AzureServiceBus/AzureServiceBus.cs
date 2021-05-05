@@ -6,11 +6,13 @@ using Newtonsoft.Json;
 
 namespace IntegrationEvent
 {
+    // TODO: Put this information in a configuration file like appsettings
     public class AzureServiceBusConfig
     {
         public string ConnectionString { get; set; }
         public string TopicName { get; set; }
         public string Subscription { get; set; }
+        public string To { get; set; }
     }
 
     public sealed class AzureServiceBus : IServiceBus, IAsyncDisposable
@@ -31,7 +33,7 @@ namespace IntegrationEvent
             _autofac = autofac;
             _manager = manager;
 
-            Processor();
+            Processor().GetAwaiter().GetResult();
         }
 
         private ServiceBusClient Client
@@ -56,14 +58,16 @@ namespace IntegrationEvent
                 Body = BinaryData.FromString(JsonConvert.SerializeObject(@event)),
                 CorrelationId = Guid.NewGuid().ToString(),
                 MessageId = Guid.NewGuid().ToString(),
-                To = _config.Subscription
+                Subject = @event.GetType().Name,
+                // This property is used to filter the messages. It's like a routing key. This filter can be created in the Azure Portal.
+                // If no filter is provided for the subscription then it will receive all messages from the topic.
+                To = _config.To
             };
 
-            message.ApplicationProperties.Add("eventName", @event.GetType().Name);
+            // This can be used to pass information about the HTTP Request. This may have an additional parameter to provide extra properties.
+            //message.ApplicationProperties.Add("eventName", @event.GetType().Name);
 
-            await sender.SendMessageAsync(
-                message
-            );
+            await sender.SendMessageAsync(message);
         }
 
         public void Subscribe<T, H>()
@@ -73,7 +77,7 @@ namespace IntegrationEvent
             _manager.AddEvent<T, H>();
         }
 
-        private void Processor()
+        private async Task Processor()
         {
             _processor = Client.CreateProcessor(
                 _config.TopicName,
@@ -89,11 +93,12 @@ namespace IntegrationEvent
             _processor.ProcessMessageAsync += ProcessMessage;
             _processor.ProcessErrorAsync += ProcessError;
 
-            _processor.StartProcessingAsync().ConfigureAwait(false);
+            await _processor.StartProcessingAsync();
         }
 
         private Task ProcessError(ProcessErrorEventArgs error)
         {
+            // TODO: Use an interface like ILogger to log the errors to an external tool.
             Console.WriteLine(error.Exception.Message);
             return Task.CompletedTask;
         }
@@ -105,9 +110,9 @@ namespace IntegrationEvent
             var message = processMessage.Message;
             var properties = message.ApplicationProperties;
 
-            if (properties.TryGetValue("eventName", out var eventName))
+            if (_manager.HasEvent(message.Subject))
             {
-                var @event = _manager.GetEvent(Convert.ToString(eventName));
+                var @event = _manager.GetEvent(message.Subject);
                 var eventType = typeof(IEventHandler<>).MakeGenericType(@event);
                 var handler = autofacScope.ResolveOptional(eventType);
 
@@ -120,7 +125,7 @@ namespace IntegrationEvent
 
                 await (Task)eventType.GetMethod("Handle").Invoke(handler, new[] { eventMessage });
 
-                await processMessage.CompleteMessageAsync(processMessage.Message);
+                await processMessage.CompleteMessageAsync(message);
             }
         }
 

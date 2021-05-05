@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,9 +15,10 @@ namespace IntegrationEvent
 
         static async Task Main(string[] args)
         {
-            string topic = args[0];
-            string subscription = args[1];
-            string messageToSend = args[2];
+            string topic = args.ElementAtOrDefault(0);
+            string subscription = args.ElementAtOrDefault(1);
+            string to = args.ElementAtOrDefault(2);
+            string messageToSend = args.ElementAtOrDefault(3);
 
             if (string.IsNullOrEmpty(topic) &&
                 string.IsNullOrEmpty(subscription))
@@ -26,20 +28,25 @@ namespace IntegrationEvent
                 Environment.Exit(1);
             }
 
-            ConfigureAutofac(topic, subscription);
+            ConfigureAutofac(topic, subscription, to);
 
             var bus = container.ResolveOptional<IServiceBus>();
             bus.Subscribe<MessageSentEvent, MessageSentEventHandler>();
 
-            await bus.Publish(new MessageSentEvent
+            WriteLine("Waiting for messages...");
+
+            if (!string.IsNullOrEmpty(messageToSend))
             {
-                Message = messageToSend
-            });
+                await bus.Publish(new MessageSentEvent
+                {
+                    Message = messageToSend
+                });
+            }
 
             ReadLine();
         }
 
-        static void ConfigureAutofac(string topic, string subscription)
+        static void ConfigureAutofac(string topic, string subscription, string to)
         {
             ContainerBuilder containerBuilder = new();
 
@@ -57,7 +64,8 @@ namespace IntegrationEvent
                     {
                         ConnectionString = "<your servicebus connection string>",
                         Subscription = subscription,
-                        TopicName = topic
+                        TopicName = topic,
+                        To = to
                     },
                     busManager,
                     container

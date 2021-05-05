@@ -7,7 +7,7 @@
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}src/Console/IntegrationEvent.csproj",
+        "${workspaceFolder}/src/Console/IntegrationEvent.csproj",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary"
       ],
